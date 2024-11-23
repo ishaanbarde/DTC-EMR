@@ -2,44 +2,20 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 const express = require("express");
 const { z, ZodError } = require("zod");
+const { patientUser } = require("./mongooseSchema");
+const { validatePatientSchema, loginSchema } = require("./zodSchema");
 const crypto = require("crypto");
 
 const app = express();
 app.use(express.json());
 
 const mongoURI = process.env.MONGO_URI;
+
 mongoose.connect(mongoURI);
-
-const patientSchema = new mongoose.Schema({
-  name: String,
-  mobile: String,
-  email: String,
-  age: Number,
-  password: String,
-});
-const patientUser = mongoose.model("patientUser", patientSchema);
-
-const validateSchema = z.object({
-  name: z.string().max(100),
-  age: z.number().min(0),
-  email: z.string().email(),
-  mobile: z.string().length(10, "Mobile number should be 10 digits"),
-  countryCode: z.string().min(1),
-  password: z
-    .string()
-    .min(8)
-    .refine(
-      (val) => /[A-Z]/.test(val) && /[0-9]/.test(val) && /[@$!%*?&#]/.test(val),
-      {
-        message:
-          "Password must include at least one uppercase letter, one number, and one special character",
-      }
-    ),
-});
 
 app.post("/patientSignUp", async (req, res) => {
   try {
-    const validatedData = validateSchema.parse(req.body);
+    const validatedData = validatePatientSchema.parse(req.body);
 
     const exUser = await patientUser.findOne({ email: validatedData.email });
 
@@ -59,6 +35,7 @@ app.post("/patientSignUp", async (req, res) => {
       age: validatedData.age,
       mobile: `+${validatedData.countryCode}${validatedData.mobile}`,
       password: hashedPassword,
+      salt: salt,
     });
 
     await user.save();
@@ -79,7 +56,31 @@ app.post("/patientSignUp", async (req, res) => {
   }
 });
 
+app.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const exUser = await patientUser.findOne({ email: email });
+
+    if (!exUser) {
+      return res.send("User does not exists!");
+    } else {
+      const hashedPassword = crypto
+        .createHash("sha256")
+        .update(password + exUser.salt)
+        .digest("hex");
+
+      if (hashedPassword == exUser.password) {
+        return res.send("Logged IN");
+      }
+    }
+    return res.send("Invalid email or password");
+  } catch (err) {
+    console.log(err);
+    return res.status(500).send("Something Went Wrong!");
+  }
+});
+
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log("Server Running");
 });
