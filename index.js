@@ -1,15 +1,19 @@
 require("dotenv").config();
 const mongoose = require("mongoose");
 const express = require("express");
+const jwt = require("jsonwebtoken");
 const { z, ZodError } = require("zod");
 const { patientUser } = require("./mongooseSchema");
+const { authenticateToken } = require("./middleware.js");
 const { validatePatientSchema, loginSchema } = require("./zodSchema");
 const crypto = require("crypto");
 
 const app = express();
+
 app.use(express.json());
 
 const mongoURI = process.env.MONGO_URI;
+const jwtSecret = process.env.JWT_SECRET;
 
 mongoose.connect(mongoURI);
 
@@ -70,7 +74,13 @@ app.post("/login", async (req, res) => {
         .digest("hex");
 
       if (hashedPassword == exUser.password) {
-        return res.send("Logged IN");
+        const token = jwt.sign(
+          { id: exUser._id, email: exUser.email },
+          jwtSecret,
+          { expiresIn: "1h" }
+        );
+
+        return res.status(200).send({ message: "Logged IN", token: token });
       }
     }
     return res.send("Invalid email or password");
@@ -78,6 +88,12 @@ app.post("/login", async (req, res) => {
     console.log(err);
     return res.status(500).send("Something Went Wrong!");
   }
+});
+
+app.use(authenticateToken);
+
+app.get("/test", (req, res) => {
+  return res.send("Hi there! you have access");
 });
 
 const PORT = process.env.PORT;
